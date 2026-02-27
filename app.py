@@ -221,8 +221,9 @@ def show_login():
         """, unsafe_allow_html=True)
 
         import secrets as _secrets
-        state = _secrets.token_urlsafe(16)
-        st.session_state.oauth_state = state
+        if not st.session_state.oauth_state:
+            st.session_state.oauth_state = _secrets.token_urlsafe(16)
+        state = st.session_state.oauth_state
 
         auth_url = get_auth_url(state)
         st.link_button("🌾  Login with Harvest", auth_url, use_container_width=True, type="primary")
