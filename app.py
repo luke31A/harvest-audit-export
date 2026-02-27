@@ -143,29 +143,25 @@ for k, v in defaults.items():
 # ---------------------------------------------------------------------------
 
 params = st.query_params
-if "code" in params and "state" in params:
-    if params["state"] == st.session_state.oauth_state:
-        try:
-            token_data    = exchange_code_for_token(params["code"])
-            access_token  = token_data["access_token"]
-            accounts_data = get_harvest_accounts(access_token)
+if "code" in params:
+    try:
+        token_data    = exchange_code_for_token(params["code"])
+        access_token  = token_data["access_token"]
+        accounts_data = get_harvest_accounts(access_token)
 
-            st.session_state.access_token = access_token
-            st.session_state.user         = accounts_data.get("user", {})
-            st.session_state.accounts     = accounts_data.get("accounts", [])
+        st.session_state.access_token = access_token
+        st.session_state.user         = accounts_data.get("user", {})
+        st.session_state.accounts     = accounts_data.get("accounts", [])
 
-            # Auto-select if only one account
-            if len(st.session_state.accounts) == 1:
-                st.session_state.account_id = str(st.session_state.accounts[0]["id"])
+        # Auto-select if only one account
+        if len(st.session_state.accounts) == 1:
+            st.session_state.account_id = str(st.session_state.accounts[0]["id"])
 
-            st.query_params.clear()
-            st.rerun()
+        st.query_params.clear()
+        st.rerun()
 
-        except Exception as e:
-            st.error(f"OAuth error: {e}")
-            st.query_params.clear()
-    else:
-        st.warning("OAuth state mismatch — please try logging in again.")
+    except Exception as e:
+        st.error(f"OAuth error: {e}")
         st.query_params.clear()
 
 
