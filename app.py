@@ -46,9 +46,17 @@ st.set_page_config(
 # OAuth constants
 # ---------------------------------------------------------------------------
 
-CLIENT_ID     = st.secrets["harvest"]["client_id"]
-CLIENT_SECRET = st.secrets["harvest"]["client_secret"]
-REDIRECT_URI  = st.secrets["harvest"]["redirect_uri"]
+try:
+    CLIENT_ID     = st.secrets["harvest"]["client_id"]
+    CLIENT_SECRET = st.secrets["harvest"]["client_secret"]
+    REDIRECT_URI  = st.secrets["harvest"]["redirect_uri"]
+except KeyError:
+    st.error(
+        "⚠️ App secrets are not configured. "
+        "Please add your Harvest OAuth credentials in the Streamlit Cloud secrets dashboard.\n\n"
+        "See DEPLOY.md for instructions."
+    )
+    st.stop()
 
 HARVEST_AUTH_URL     = "https://id.getharvest.com/oauth2/authorize"
 HARVEST_TOKEN_URL    = "https://id.getharvest.com/api/v2/oauth2/token"
