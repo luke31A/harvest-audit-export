@@ -100,6 +100,17 @@ def get_harvest_accounts(access_token: str) -> dict:
     return resp.json()
 
 
+def get_current_user(access_token: str, account_id: str) -> dict:
+    """Returns the current user's Harvest profile, including is_admin."""
+    resp = requests.get("https://api.harvestapp.com/v2/users/me", headers={
+        "Authorization":    f"Bearer {access_token}",
+        "Harvest-Account-ID": account_id,
+        "User-Agent":       "CommitConsulting-HarvestAudit/1.0",
+    }, timeout=15)
+    resp.raise_for_status()
+    return resp.json()
+
+
 # ---------------------------------------------------------------------------
 # Excel generation
 # ---------------------------------------------------------------------------
@@ -127,6 +138,7 @@ defaults = {
     "account_id":     None,
     "accounts":       [],
     "user":           None,
+    "is_admin":       None,   # None = unchecked, True/False = result
     "df":             None,
     "summary":        None,
     "dupes":          None,
@@ -171,16 +183,48 @@ if "code" in params:
 
 st.markdown("""
 <style>
+    /* Sidebar background */
     [data-testid="stSidebar"] { background-color: #1F3864; }
-    [data-testid="stSidebar"] * { color: #FFFFFF !important; }
-    [data-testid="stSidebar"] .stSelectbox label,
-    [data-testid="stSidebar"] .stDateInput label { color: #D6E4F0 !important; }
+
+    /* White text for labels, markdown, captions in sidebar */
+    [data-testid="stSidebar"] label,
+    [data-testid="stSidebar"] .stMarkdown p,
+    [data-testid="stSidebar"] .stMarkdown h1,
+    [data-testid="stSidebar"] .stMarkdown h2,
+    [data-testid="stSidebar"] .stMarkdown h3,
+    [data-testid="stSidebar"] .stCaption p,
+    [data-testid="stSidebar"] small { color: #FFFFFF !important; }
+
+    /* Date inputs — dark text on white background */
+    [data-testid="stSidebar"] input { color: #1F1F1F !important; }
+
+    /* Sidebar buttons — semi-transparent white style */
+    [data-testid="stSidebar"] .stButton > button {
+        background-color: rgba(255,255,255,0.15) !important;
+        border: 1px solid rgba(255,255,255,0.4) !important;
+        color: #FFFFFF !important;
+    }
+    [data-testid="stSidebar"] .stButton > button p { color: #FFFFFF !important; }
+    [data-testid="stSidebar"] .stButton > button:hover {
+        background-color: rgba(255,255,255,0.25) !important;
+    }
+
+    /* Primary run button */
+    [data-testid="stSidebar"] .stButton > button[kind="primaryFormSubmit"],
+    [data-testid="stSidebar"] .stButton > button[kind="primary"] {
+        background-color: #2E75B6 !important;
+        border: none !important;
+    }
+
+    /* KPI metric cards */
     div[data-testid="metric-container"] {
         background: #EBF3FB;
         border: 1px solid #D6E4F0;
         border-radius: 8px;
         padding: 12px 16px;
     }
+
+    /* Page header banner */
     .commit-header {
         background: #1F3864;
         color: white;
@@ -188,6 +232,7 @@ st.markdown("""
         border-radius: 8px;
         margin-bottom: 20px;
     }
+
     .stTabs [data-baseweb="tab"] { font-size: 14px; font-weight: 500; }
 </style>
 """, unsafe_allow_html=True)
@@ -245,6 +290,29 @@ def show_account_selector():
 # ---------------------------------------------------------------------------
 
 def show_app():
+    # ── Admin check (runs once per session after account selection) ───────
+    if st.session_state.is_admin is None:
+        try:
+            me = get_current_user(
+                st.session_state.access_token,
+                st.session_state.account_id,
+            )
+            st.session_state.is_admin = me.get("is_admin", False)
+        except Exception:
+            st.session_state.is_admin = False
+
+    if not st.session_state.is_admin:
+        st.error(
+            "**Access restricted.**  \n"
+            "This tool is only available to Harvest administrators. "
+            "Contact your Harvest account admin if you need access."
+        )
+        if st.button("Sign out"):
+            for k in defaults:
+                st.session_state[k] = defaults[k]
+            st.rerun()
+        return
+
     user       = st.session_state.user or {}
     first_name = user.get("first_name", "")
     last_name  = user.get("last_name", "")
