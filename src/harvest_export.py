@@ -192,10 +192,7 @@ def fetch_time_entries(token: str, account_id: str,
         account_id   = account_id,
         extra_params = {"from": from_date, "to": to_date},
     )
-    before = len(entries)
-    entries = [e for e in entries if e.get("client", {}).get("name") != "Commit Consulting"]
-    filtered = before - len(entries)
-    print(f"  -> {len(entries)} entries fetched ({filtered} Commit Consulting internal entries excluded).")
+    print(f"  -> {len(entries)} entries fetched.")
     return entries
 
 
