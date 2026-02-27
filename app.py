@@ -9,6 +9,7 @@ OAuth 2.0 login via Harvest. Requires client_id / client_secret in
 import io
 import sys
 import os
+import base64
 import urllib.parse
 import requests
 import streamlit as st
@@ -17,6 +18,13 @@ from openpyxl import Workbook
 
 # Make src/ importable
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "src"))
+
+STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
+
+def img_to_b64(filename: str) -> str:
+    path = os.path.join(STATIC_DIR, filename)
+    with open(path, "rb") as f:
+        return base64.b64encode(f.read()).decode()
 
 from harvest_export import (
     fetch_time_entries,
@@ -245,11 +253,13 @@ st.markdown("""
 def show_login():
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
-        st.markdown("""
+        logo_b64 = img_to_b64("commit_consulting_Logo.png")
+        st.markdown(f"""
         <div style="text-align:center; padding: 60px 0 30px 0;">
-            <div style="font-size:48px;">📊</div>
+            <img src="data:image/png;base64,{logo_b64}"
+                 style="max-width:220px; margin-bottom:20px;" />
             <h1 style="color:#1F3864; margin:8px 0 4px 0;">Harvest Audit Export</h1>
-            <p style="color:#595959; font-size:15px;">Commit Consulting — Financial Operations</p>
+            <p style="color:#595959; font-size:15px;">Financial Operations</p>
         </div>
         """, unsafe_allow_html=True)
 
@@ -366,10 +376,19 @@ def show_app():
             st.rerun()
 
     # ── Header ────────────────────────────────────────────────────────────
-    st.markdown("""
-    <div class="commit-header">
-        <span style="font-size:22px; font-weight:700;">Harvest Audit Export</span>
-        <span style="font-size:14px; opacity:0.7; margin-left:16px;">Commit Consulting — Financial Operations</span>
+    logo_b64     = img_to_b64("commit_consulting_Logo.png")
+    squirtle_b64 = img_to_b64("Squirtle_Squad_Leader.jpg")
+    st.markdown(f"""
+    <div class="commit-header" style="position:relative; overflow:hidden;">
+        <img src="data:image/png;base64,{logo_b64}"
+             style="height:36px; vertical-align:middle; margin-right:14px;" />
+        <span style="font-size:22px; font-weight:700; vertical-align:middle;">Harvest Audit Export</span>
+        <span style="font-size:14px; opacity:0.7; margin-left:16px; vertical-align:middle;">Financial Operations</span>
+        <img src="data:image/jpeg;base64,{squirtle_b64}"
+             title="The boss is watching 👀"
+             style="position:absolute; bottom:-6px; right:12px;
+                    height:72px; border-radius:6px 6px 0 0;
+                    opacity:0.92;" />
     </div>
     """, unsafe_allow_html=True)
 
