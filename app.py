@@ -298,8 +298,13 @@ def show_app():
                 st.session_state.account_id,
             )
             st.session_state.is_admin = me.get("is_admin", False)
-        except Exception:
+            st.session_state._debug_me = me
+        except Exception as e:
             st.session_state.is_admin = False
+            st.session_state._debug_me = {"error": str(e)}
+
+    with st.expander("🔧 Debug — remove before sharing (raw API response)"):
+        st.json(st.session_state.get("_debug_me", {}))
 
     if not st.session_state.is_admin:
         st.error(
