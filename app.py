@@ -225,23 +225,9 @@ def show_login():
         st.session_state.oauth_state = state
 
         auth_url = get_auth_url(state)
-        st.markdown(f"""
-        <div style="text-align:center; margin-top:8px;">
-            <a href="{auth_url}" target="_self"
-               style="background:#2E75B6; color:white; padding:12px 32px;
-                      border-radius:6px; text-decoration:none; font-size:15px;
-                      font-weight:600; display:inline-block;">
-                🌾&nbsp;&nbsp;Login with Harvest
-            </a>
-        </div>
-        """, unsafe_allow_html=True)
+        st.link_button("🌾  Login with Harvest", auth_url, use_container_width=True, type="primary")
 
-        st.markdown("""
-        <p style="text-align:center; color:#999; font-size:12px; margin-top:16px;">
-            You will be redirected to Harvest to authorise access.<br>
-            No passwords are stored by this application.
-        </p>
-        """, unsafe_allow_html=True)
+        st.caption("You will be redirected to Harvest to authorise access. No passwords are stored by this application.")
 
 
 # ---------------------------------------------------------------------------
