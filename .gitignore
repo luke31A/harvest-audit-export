@@ -1,0 +1,8 @@
+output/
+dist/
+build/
+__pycache__/
+*.pyc
+*.spec
+.env
+.streamlit/secrets.toml
