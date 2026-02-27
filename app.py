@@ -306,7 +306,7 @@ def show_app():
             st.session_state.is_admin = False
             st.session_state._debug_me = {"error": str(e)}
 
-if not st.session_state.is_admin:
+    if not st.session_state.is_admin:
         st.error(
             "**Access restricted.**  \n"
             "This tool is only available to Harvest administrators. "
