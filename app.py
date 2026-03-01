@@ -21,6 +21,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "src"))
 
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 
+@st.cache_data
 def img_to_b64(filename: str) -> str:
     path = os.path.join(STATIC_DIR, filename)
     with open(path, "rb") as f:
@@ -28,7 +29,6 @@ def img_to_b64(filename: str) -> str:
 
 from harvest_export import (
     fetch_time_entries,
-    fetch_timesheet_approvals,
     parse_entries,
     add_audit_columns,
     build_summary,
@@ -416,15 +416,8 @@ def show_app():
                 status.update(label="No time entries found for that date range.", state="error")
                 st.stop()
 
-            st.write("Fetching timesheet approvals...")
-            approvals = fetch_timesheet_approvals(
-                st.session_state.access_token,
-                st.session_state.account_id,
-                from_str, to_str,
-            )
-
             st.write("Processing data and computing audit metrics...")
-            df      = parse_entries(entries, approvals)
+            df      = parse_entries(entries)
             df      = add_audit_columns(df)
             summary = build_summary(df)
             dupes   = detect_duplicates(df)

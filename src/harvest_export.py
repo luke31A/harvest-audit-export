@@ -17,6 +17,7 @@ import time
 import datetime as _dt
 from datetime import datetime
 from zoneinfo import ZoneInfo
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import requests
 import pandas as pd
@@ -30,7 +31,6 @@ from openpyxl.utils import get_column_letter
 # ---------------------------------------------------------------------------
 
 HARVEST_BASE_URL = "https://api.harvestapp.com/v2"
-REQUEST_DELAY_SEC = 0.12   # stay well under the 100 req/15s rate limit
 
 # Submission deadline: Monday after the work week at 9:30 AM Central
 CENTRAL = ZoneInfo("America/Chicago")
@@ -123,57 +123,68 @@ def _headers(token: str, account_id: str) -> dict:
     }
 
 
+def _fetch_page(endpoint: str, headers: dict, params: dict) -> requests.Response:
+    """Fetch one page, retrying after a wait on HTTP 429."""
+    while True:
+        resp = requests.get(endpoint, headers=headers, params=params, timeout=30)
+        if resp.status_code != 429:
+            return resp
+        time.sleep(15)
+
+
 def fetch_all(endpoint: str, resource_key: str, token: str,
               account_id: str, extra_params: dict = None) -> list:
     """
-    Paginate through a Harvest endpoint and return all records.
+    Fetch all records from a paginated Harvest endpoint.
 
-    Args:
-        endpoint:     Full URL, e.g. HARVEST_BASE_URL + "/time_entries"
-        resource_key: JSON key that contains the list, e.g. "time_entries"
-        token:        Harvest PAT
-        account_id:   Harvest Account ID
-        extra_params: Any additional query params (date filters, etc.)
+    Page 1 is fetched first to discover total_pages; remaining pages
+    are then fetched in parallel (up to 5 concurrent requests).
     """
-    headers = _headers(token, account_id)
-    params  = {**(extra_params or {}), "per_page": 100, "page": 1}
-    records = []
+    headers     = _headers(token, account_id)
+    base_params = {**(extra_params or {}), "per_page": 100}
 
-    while True:
-        resp = requests.get(endpoint, headers=headers, params=params, timeout=30)
+    # ── Page 1 (discover total_pages) ────────────────────────────────────
+    resp = _fetch_page(endpoint, headers, {**base_params, "page": 1})
 
-        if resp.status_code == 401:
-            print("\n  ERROR: Invalid credentials (401). Check your token and account ID.")
-            sys.exit(1)
+    if resp.status_code == 401:
+        print("\n  ERROR: Invalid credentials (401). Check your token and account ID.")
+        sys.exit(1)
+    if resp.status_code == 403:
+        return []
+    if resp.status_code != 200:
+        print(f"\n  WARNING: API returned {resp.status_code} for {endpoint} – skipping.")
+        return []
 
-        if resp.status_code == 403:
-            # Feature not available on this Harvest plan – return empty silently
-            return []
+    data        = resp.json()
+    records     = list(data.get(resource_key, []))
+    total_pages = data.get("total_pages", 1)
 
-        if resp.status_code == 429:
-            print("\n  Rate limited – waiting 15 seconds...")
-            time.sleep(15)
-            continue
+    print(f"    Page 1/{total_pages} ({len(records)} records)...", end="\r", flush=True)
 
-        if resp.status_code != 200:
-            print(f"\n  WARNING: API returned {resp.status_code} for {endpoint} – skipping.")
-            return records
+    if total_pages <= 1:
+        print()
+        return records
 
-        data        = resp.json()
-        page_items  = data.get(resource_key, [])
-        records.extend(page_items)
+    # ── Pages 2..N in parallel ───────────────────────────────────────────
+    page_results: dict[int, list] = {}
+    with ThreadPoolExecutor(max_workers=5) as executor:
+        future_to_page = {
+            executor.submit(_fetch_page, endpoint, headers, {**base_params, "page": p}): p
+            for p in range(2, total_pages + 1)
+        }
+        for future in as_completed(future_to_page):
+            page_num = future_to_page[future]
+            r        = future.result()
+            page_results[page_num] = (
+                r.json().get(resource_key, []) if r.status_code == 200 else []
+            )
+            so_far = len(records) + sum(len(v) for v in page_results.values())
+            print(f"    {len(page_results) + 1}/{total_pages} pages fetched ({so_far} records)...",
+                  end="\r", flush=True)
 
-        total_pages = data.get("total_pages", 1)
-        current     = params["page"]
-        print(f"    Fetched page {current}/{total_pages} ({len(records)} records so far)...",
-              end="\r", flush=True)
-
-        if current >= total_pages or not page_items:
-            print()  # newline after \r progress
-            break
-
-        params["page"] += 1
-        time.sleep(REQUEST_DELAY_SEC)
+    print()
+    for p in range(2, total_pages + 1):
+        records.extend(page_results.get(p, []))
 
     return records
 
@@ -196,27 +207,6 @@ def fetch_time_entries(token: str, account_id: str,
     return entries
 
 
-def fetch_timesheet_approvals(token: str, account_id: str,
-                              from_date: str, to_date: str) -> list:
-    """
-    Fetch timesheet-level approvals (requires Harvest Pro plan).
-    Returns empty list silently if the feature is unavailable.
-    """
-    print("  Fetching timesheet approvals...")
-    approvals = fetch_all(
-        endpoint     = f"{HARVEST_BASE_URL}/timesheet_approvals",
-        resource_key = "timesheet_approvals",
-        token        = token,
-        account_id   = account_id,
-        extra_params = {"from": from_date, "to": to_date},
-    )
-    if approvals:
-        print(f"  -> {len(approvals)} approvals fetched.")
-    else:
-        print("  -> No approvals found (feature may be unavailable on this plan).")
-    return approvals
-
-
 # ---------------------------------------------------------------------------
 # Data parsing & transformation
 # ---------------------------------------------------------------------------
@@ -229,38 +219,10 @@ def _safe(val):
         return val
 
 
-def parse_entries(entries: list, approvals: list) -> pd.DataFrame:
-    """
-    Flatten raw Harvest time entry JSON into a DataFrame and merge in
-    any timesheet-level approval data.
-    """
-    # Build an approval lookup keyed by (user_id, period_start, period_end)
-    approval_map = {}
-    for a in approvals:
-        uid   = a.get("user",     {}).get("id")
-        start = a.get("period_start")
-        end   = a.get("period_end")
-        if uid and start:
-            approval_map[(uid, start, end)] = {
-                "Approval Status":     a.get("status"),
-                "Approver Name":       a.get("approver", {}).get("name"),
-                "Approval Created At": a.get("created_at"),
-                "Approval Updated At": a.get("updated_at"),
-                "Approval Notes":      a.get("notes"),
-            }
-
+def parse_entries(entries: list) -> pd.DataFrame:
+    """Flatten raw Harvest time entry JSON into a DataFrame."""
     rows = []
     for e in entries:
-        user_id = e.get("user", {}).get("id")
-
-        # Attempt to find a matching approval for this entry's week
-        spent = e.get("spent_date", "")
-        approval_data = {}
-        for (uid, ps, pe), data in approval_map.items():
-            if uid == user_id and ps and pe and ps <= spent <= pe:
-                approval_data = data
-                break
-
         row = {
             # ── Identifiers ──────────────────────────────────────────────
             "Entry ID":            e.get("id"),
@@ -314,8 +276,6 @@ def parse_entries(entries: list, approvals: list) -> pd.DataFrame:
             # ── External reference ────────────────────────────────────────
             "External Ref":        (e.get("external_reference") or {}).get("id"),
 
-            # ── Timesheet-level approval (merged from approvals endpoint) ─
-            **approval_data,
         }
         rows.append(row)
 
@@ -325,14 +285,6 @@ def parse_entries(entries: list, approvals: list) -> pd.DataFrame:
     df["Work Date"]  = pd.to_datetime(df["Work Date"])
     df["Created At"] = pd.to_datetime(df["Created At"], utc=True).dt.tz_localize(None)
     df["Updated At"] = pd.to_datetime(df["Updated At"], utc=True).dt.tz_localize(None)
-
-    if "Approval Created At" in df.columns:
-        df["Approval Created At"] = pd.to_datetime(
-            df["Approval Created At"], utc=True, errors="coerce"
-        ).dt.tz_localize(None)
-        df["Approval Updated At"] = pd.to_datetime(
-            df["Approval Updated At"], utc=True, errors="coerce"
-        ).dt.tz_localize(None)
 
     return df
 
@@ -409,12 +361,6 @@ def add_audit_columns(df: pd.DataFrame) -> pd.DataFrame:
 
     # Was the entry edited after initial creation? (> 3 min threshold)
     df["Was Edited"] = df["Edit Lag (Hours)"] > 0.05
-
-    # Time from work date to approval (if available)
-    if "Approval Created At" in df.columns:
-        df["Days to Approval"] = (
-            df["Approval Created At"].dt.normalize() - df["Work Date"]
-        ).dt.days
 
     # Client name mention check in notes
     all_clients = [c for c in df["Client"].dropna().unique() if isinstance(c, str)]
@@ -753,8 +699,6 @@ def write_raw_sheet(wb: Workbook, df: pd.DataFrame):
         "Locked Reason": 22,     "Is Closed": 11,        "Is Billed": 11,
         "Budgeted": 10,          "Created At": 22,       "Updated At": 22,
         "Invoice ID": 12,        "Invoice Number": 16,   "External Ref": 16,
-        "Approval Status": 16,   "Approver Name": 22,    "Approval Created At": 22,
-        "Approval Updated At": 22, "Approval Notes": 30, "Days to Approval": 17,
         "Submission Deadline": 22,   "Hours Past Deadline": 18,
         "Submission Lag (Days)": 20, "Edit Lag (Hours)": 17,
         "Was Edited": 12,            "Late Submission": 16,
@@ -1004,8 +948,7 @@ def main():
     token, account_id = prompt_credentials()
     from_date, to_date = prompt_date_range()
 
-    entries   = fetch_time_entries(token, account_id, from_date, to_date)
-    approvals = fetch_timesheet_approvals(token, account_id, from_date, to_date)
+    entries = fetch_time_entries(token, account_id, from_date, to_date)
 
     if not entries:
         print("\n  No time entries found for that date range.")
@@ -1013,7 +956,7 @@ def main():
         return
 
     print("\n  Processing data...")
-    df      = parse_entries(entries, approvals)
+    df      = parse_entries(entries)
     df      = add_audit_columns(df)
     summary = build_summary(df)
     dupes   = detect_duplicates(df)
