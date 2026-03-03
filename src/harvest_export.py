@@ -293,11 +293,15 @@ def parse_entries(entries: list) -> pd.DataFrame:
 
 EXCLUDED_CLIENT_NAMES = {"Commit Consulting", "Commit Consulting Sales", "Indeed", "Greenhouse"}
 
+# Entries billed to these clients always return "Internal" for the notes client check
+INTERNAL_CLIENT_NAMES = {"Commit Consulting"}
+
 def _check_notes_client(notes, own_client: str, all_clients: list) -> str:
     """
     Inspect an entry's notes field for client name references.
 
     Returns one of:
+      "Internal"                     — entry is billed to an internal client (e.g. Commit Consulting)
       "Client Match"                 — own client name found in notes
       "Possible Wrong Client — X"    — a different client's name found in notes
       "No Client Name Mentioned"     — no client name found (or notes is empty)
@@ -309,7 +313,12 @@ def _check_notes_client(notes, own_client: str, all_clients: list) -> str:
     shorter than 3 characters are skipped to avoid false positives.
 
     Clients in EXCLUDED_CLIENT_NAMES are never matched (e.g. "Commit Consulting").
+    Clients in INTERNAL_CLIENT_NAMES always return "Internal" regardless of notes.
     """
+    # Internal clients always return "Internal" — no note content check needed
+    if own_client in INTERNAL_CLIENT_NAMES:
+        return "Internal"
+
     if not notes or (isinstance(notes, float) and pd.isna(notes)):
         return "No Client Name Mentioned"
 
