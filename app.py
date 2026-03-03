@@ -277,7 +277,7 @@ def show_login():
         state = st.session_state.oauth_state
 
         auth_url = get_auth_url(state)
-        st.link_button("🌾  Login with Harvest", auth_url, width="container", type="primary")
+        st.link_button("🌾  Login with Harvest", auth_url, type="primary")
 
         st.caption("You will be redirected to Harvest to authorise access. No passwords are stored by this application.")
 
