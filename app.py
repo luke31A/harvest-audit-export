@@ -277,7 +277,7 @@ def show_login():
         state = st.session_state.oauth_state
 
         auth_url = get_auth_url(state)
-        st.link_button("🌾  Login with Harvest", auth_url, use_container_width=True, type="primary")
+        st.link_button("🌾  Login with Harvest", auth_url, width="container", type="primary")
 
         st.caption("You will be redirected to Harvest to authorise access. No passwords are stored by this application.")
 
@@ -357,7 +357,7 @@ def show_app():
             st.error("End date must be after start date.")
 
         st.divider()
-        run_clicked = st.button("▶ Run Report", type="primary", use_container_width=True)
+        run_clicked = st.button("▶ Run Report", type="primary", width="container")
 
         if st.session_state.excel_bytes and st.session_state.report_dates:
             fd, td = st.session_state.report_dates
@@ -366,11 +366,11 @@ def show_app():
                 data=st.session_state.excel_bytes,
                 file_name=f"Harvest_Audit_{fd}_to_{td}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                use_container_width=True,
+                width="container",
             )
 
         st.divider()
-        if st.button("Logout", use_container_width=True):
+        if st.button("Logout", width="container"):
             for k in defaults:
                 st.session_state[k] = defaults[k]
             st.rerun()
@@ -482,14 +482,14 @@ def show_app():
         st.subheader("Breakdown by Employee")
         st.dataframe(
             summary["by_employee"],
-            use_container_width=True,
+            width="container",
             hide_index=True,
         )
 
         st.subheader("Breakdown by Client / Project")
         st.dataframe(
             summary["by_project"],
-            use_container_width=True,
+            width="container",
             hide_index=True,
         )
 
@@ -498,7 +498,7 @@ def show_app():
             st.caption("Late submissions and entries edited after being locked.")
             st.dataframe(
                 summary["flags"],
-                use_container_width=True,
+                width="container",
                 hide_index=True,
             )
         else:
@@ -518,7 +518,7 @@ def show_app():
             c2.metric("Notes match groups", notes_groups,
                       help="Same employee, client, project, date & notes")
 
-            st.dataframe(dupes, use_container_width=True, hide_index=True)
+            st.dataframe(dupes, width="container", hide_index=True)
 
     # ── Blank Notes tab ───────────────────────────────────────────────────
     with tab_blank:
@@ -534,14 +534,14 @@ def show_app():
             keep = [c for c in display_cols if c in blank_df.columns]
             st.dataframe(
                 blank_df[keep].sort_values(["Employee Name", "Work Date"]),
-                use_container_width=True,
+                width="container",
                 hide_index=True,
             )
 
     # ── Raw Data tab ──────────────────────────────────────────────────────
     with tab_raw:
         st.caption(f"{len(df):,} total entries. Use the column headers to sort and filter.")
-        st.dataframe(df, use_container_width=True, hide_index=True)
+        st.dataframe(df, width="container", hide_index=True)
 
 
 # ---------------------------------------------------------------------------
