@@ -397,7 +397,7 @@ def show_app():
         from_str = from_date.strftime("%Y-%m-%d")
         to_str   = to_date.strftime("%Y-%m-%d")
 
-        with st.status("🌾  Squirtle Squad, reporting for duty...", expanded=True) as status:
+        with st.status("🌾  Running Audit...", expanded=True) as status:
 
             # ── Stage 1: Fetch ────────────────────────────────────────────
             s1      = st.empty()
