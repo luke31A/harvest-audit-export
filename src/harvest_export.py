@@ -291,7 +291,7 @@ def parse_entries(entries: list) -> pd.DataFrame:
     return df
 
 
-EXCLUDED_CLIENT_NAMES = {"Commit Consulting"}
+EXCLUDED_CLIENT_NAMES = {"Commit Consulting", "Commit Consulting Sales", "Indeed", "Greenhouse"}
 
 def _check_notes_client(notes, own_client: str, all_clients: list) -> str:
     """
