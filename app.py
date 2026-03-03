@@ -397,13 +397,22 @@ def show_app():
         from_str = from_date.strftime("%Y-%m-%d")
         to_str   = to_date.strftime("%Y-%m-%d")
 
-        with st.status("Fetching data from Harvest...", expanded=True) as status:
-            st.write(f"Fetching time entries ({from_str} to {to_str})...")
+        with st.status("🌾  Squirtle Squad, reporting for duty...", expanded=True) as status:
+
+            # ── Stage 1: Fetch ────────────────────────────────────────────
+            s1      = st.empty()
+            counter = st.empty()
+            s1.markdown("⏳ &nbsp; **Harvesting your time entries from Harvest...**")
+
+            def on_progress(count: int):
+                counter.caption(f"📥 {count:,} entries pulled so far...")
+
             try:
                 entries = fetch_time_entries(
                     st.session_state.access_token,
                     st.session_state.account_id,
                     from_str, to_str,
+                    on_progress=on_progress,
                 )
             except requests.HTTPError as e:
                 if e.response.status_code == 401:
@@ -416,23 +425,46 @@ def show_app():
                 status.update(label="No time entries found for that date range.", state="error")
                 st.stop()
 
-            st.write("Processing data and computing audit metrics...")
-            df      = parse_entries(entries)
-            df      = add_audit_columns(df)
+            counter.empty()
+            s1.markdown(f"✅ &nbsp; **{len(entries):,} entries in the net!**")
+
+            # ── Stage 2: Parse & audit columns ───────────────────────────
+            s2 = st.empty()
+            s2.markdown("⏳ &nbsp; **Running the audit gauntlet...**")
+            df = parse_entries(entries)
+            df = add_audit_columns(df)
+            s2.markdown("✅ &nbsp; **Audit metrics locked in**")
+
+            # ── Stage 3: Summary & duplicate detection ────────────────────
+            s3 = st.empty()
+            s3.markdown("⏳ &nbsp; **💧 Squirtle Squad sniffing out duplicates...**")
             summary = build_summary(df)
             dupes   = detect_duplicates(df)
+            dupe_groups = dupes["Duplicate Group"].nunique() if not dupes.empty else 0
+            s3.markdown(
+                f"✅ &nbsp; **{dupe_groups} duplicate group{'s' if dupe_groups != 1 else ''} found**"
+                if dupe_groups else "✅ &nbsp; **No duplicates detected — nice work!**"
+            )
 
-            st.write("Generating Excel report...")
+            # ── Stage 4: Excel generation ─────────────────────────────────
+            s4 = st.empty()
+            s4.markdown("⏳ &nbsp; **📊 Polishing the spreadsheet...**")
             excel_bytes = generate_excel_bytes(df, summary, dupes, from_str, to_str)
+            s4.markdown("✅ &nbsp; **Spreadsheet ready for download**")
 
-            st.session_state.df          = df
-            st.session_state.summary     = summary
-            st.session_state.dupes       = dupes
-            st.session_state.excel_bytes = excel_bytes
+            st.session_state.df           = df
+            st.session_state.summary      = summary
+            st.session_state.dupes        = dupes
+            st.session_state.excel_bytes  = excel_bytes
             st.session_state.report_dates = (from_str, to_str)
 
+            late_count  = int(df["Late Submission"].sum())
+            flag_emoji  = "🚨" if late_count > 0 else "🎉"
             status.update(
-                label=f"Report ready — {len(entries)} entries loaded.",
+                label=(
+                    f"{flag_emoji}  {len(entries):,} entries loaded"
+                    f"  ·  {late_count} late submission{'s' if late_count != 1 else ''} found"
+                ),
                 state="complete",
                 expanded=False,
             )

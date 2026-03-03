@@ -135,12 +135,16 @@ def _fetch_page(endpoint: str, headers: dict, params: dict) -> requests.Response
 
 
 def fetch_all(endpoint: str, resource_key: str, token: str,
-              account_id: str, extra_params: dict = None) -> list:
+              account_id: str, extra_params: dict = None,
+              on_progress: callable = None) -> list:
     """
     Fetch all records from a paginated Harvest endpoint.
 
     Page 1 is fetched first to discover total_pages; remaining pages
     are then fetched in parallel (up to 5 concurrent requests).
+
+    on_progress(count: int) is called after each page with the running
+    total of records fetched so far (optional).
     """
     headers     = _headers(token, account_id)
     base_params = {**(extra_params or {}), "per_page": 100}
@@ -162,6 +166,8 @@ def fetch_all(endpoint: str, resource_key: str, token: str,
     total_pages = data.get("total_pages", 1)
 
     print(f"    Page 1/{total_pages} ({len(records)} records)...", end="\r", flush=True)
+    if on_progress:
+        on_progress(len(records))
 
     if total_pages <= 1:
         print()
@@ -183,6 +189,8 @@ def fetch_all(endpoint: str, resource_key: str, token: str,
             so_far = len(records) + sum(len(v) for v in page_results.values())
             print(f"    {len(page_results) + 1}/{total_pages} pages fetched ({so_far} records)...",
                   end="\r", flush=True)
+            if on_progress:
+                on_progress(so_far)
 
     print()
     for p in range(2, total_pages + 1):
@@ -196,7 +204,8 @@ def fetch_all(endpoint: str, resource_key: str, token: str,
 # ---------------------------------------------------------------------------
 
 def fetch_time_entries(token: str, account_id: str,
-                       from_date: str, to_date: str) -> list:
+                       from_date: str, to_date: str,
+                       on_progress: callable = None) -> list:
     print(f"\n  Fetching time entries ({from_date} to {to_date})...")
     entries = fetch_all(
         endpoint     = f"{HARVEST_BASE_URL}/time_entries",
@@ -204,6 +213,7 @@ def fetch_time_entries(token: str, account_id: str,
         token        = token,
         account_id   = account_id,
         extra_params = {"from": from_date, "to": to_date},
+        on_progress  = on_progress,
     )
     print(f"  -> {len(entries)} entries fetched.")
     return entries
