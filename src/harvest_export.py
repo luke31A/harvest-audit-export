@@ -19,6 +19,8 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+import re
+
 import requests
 import pandas as pd
 
@@ -289,6 +291,8 @@ def parse_entries(entries: list) -> pd.DataFrame:
     return df
 
 
+EXCLUDED_CLIENT_NAMES = {"Commit Consulting"}
+
 def _check_notes_client(notes, own_client: str, all_clients: list) -> str:
     """
     Inspect an entry's notes field for client name references.
@@ -298,9 +302,13 @@ def _check_notes_client(notes, own_client: str, all_clients: list) -> str:
       "Possible Wrong Client — X"    — a different client's name found in notes
       "No Client Name Mentioned"     — no client name found (or notes is empty)
 
-    Matching is case-insensitive substring search. Clients are tested longest-
-    first to prefer more specific matches (e.g. "Newfold Digital" over "Newfold").
-    Client names shorter than 3 characters are skipped to avoid false positives.
+    Matching uses whole-word regex search (word boundaries) to avoid false
+    positives from client names embedded inside other words (e.g. "KForce"
+    inside "workforce"). Clients are tested longest-first to prefer more
+    specific matches (e.g. "Newfold Digital" over "Newfold"). Client names
+    shorter than 3 characters are skipped to avoid false positives.
+
+    Clients in EXCLUDED_CLIENT_NAMES are never matched (e.g. "Commit Consulting").
     """
     if not notes or (isinstance(notes, float) and pd.isna(notes)):
         return "No Client Name Mentioned"
@@ -311,8 +319,13 @@ def _check_notes_client(notes, own_client: str, all_clients: list) -> str:
 
     own_lower = own_client.lower() if isinstance(own_client, str) else ""
 
-    # Check own client first
-    if own_lower and len(own_lower) >= 3 and own_lower in notes_lower:
+    # Check own client first (skip excluded clients)
+    if (
+        own_lower
+        and len(own_lower) >= 3
+        and own_client not in EXCLUDED_CLIENT_NAMES
+        and re.search(r'\b' + re.escape(own_lower) + r'\b', notes_lower)
+    ):
         return "Client Match"
 
     # Check other clients, longest name first to reduce partial-match ambiguity
@@ -320,7 +333,10 @@ def _check_notes_client(notes, own_client: str, all_clients: list) -> str:
         if client == own_client:
             continue
         client_lower = client.lower()
-        if len(client_lower) >= 3 and client_lower in notes_lower:
+        if (
+            len(client_lower) >= 3
+            and re.search(r'\b' + re.escape(client_lower) + r'\b', notes_lower)
+        ):
             return f"Possible Wrong Client — {client}"
 
     return "No Client Name Mentioned"
@@ -362,8 +378,11 @@ def add_audit_columns(df: pd.DataFrame) -> pd.DataFrame:
     # Was the entry edited after initial creation? (> 3 min threshold)
     df["Was Edited"] = df["Edit Lag (Hours)"] > 0.05
 
-    # Client name mention check in notes
-    all_clients = [c for c in df["Client"].dropna().unique() if isinstance(c, str)]
+    # Client name mention check in notes (exclude Commit Consulting and similar internal clients)
+    all_clients = [
+        c for c in df["Client"].dropna().unique()
+        if isinstance(c, str) and c not in EXCLUDED_CLIENT_NAMES
+    ]
     df["Notes: Client Check"] = df.apply(
         lambda row: _check_notes_client(row["Notes"], row["Client"], all_clients),
         axis=1,
